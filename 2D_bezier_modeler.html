@@ -1,0 +1,659 @@
+<html>
+<head><title>2D Bezier Modeler</title>
+</head>
+<body>
+<canvas id="myCanvas" onmousemove="trackMouse(event)" onmousedown="onCanvasMouseDown()" onmouseup="deselectDragBox()">Your browser does not support the HTML5 canvas tag.</canvas>
+
+<div id="win" style="background-color: #BBBBAA; padding: 3px 8px; left: 30px; bottom: 30px; position: fixed; z-index: 9999;">
+
+<label>BG Image</label>
+<!-- file input for local system selection -->
+<input type="file" id="imageLoader" accept="image/*" class="upload-btn">
+
+<button id="addBtn" style="background-color: #AA8888; padding: 10px 20px; font-size: 18px;" onmousedown="toggleAddMode()">Layout</button>
+<button id="connectBtn" style="background-color: #CCCCCC; padding: 10px 20px; font-size: 18px;" onmousedown="connectOrbits()">Connect</button>
+<button id="deleteBtn" style="background-color: #CCCCCC; padding: 10px 20px; font-size: 18px;" onmousedown="deleteConnections()">Delete</button>
+<button id="downloadBtn" style="background-color: #CCCCCC; padding: 10px 20px; font-size: 18px;" onmousedown="downloadSVG()">Download SVG</button>
+</div>
+<script src="beziersToCircuits.js"></script>
+
+<script>
+var c = document.getElementById("myCanvas");
+var ctx = c.getContext("2d");
+c.width = window.innerWidth;
+c.height = window.innerHeight;
+
+class arc_curve {
+	constructor(x, y, radius, orbitA, xOrbA, yOrbA, orbitB, xOrbB, yOrbB)
+	{
+		this.x = x;
+		this.y = y;
+		this.radius = radius;
+		this.orbitA = orbitA;
+		this.xOrbA = xOrbA;
+		this.yOrbA = yOrbA;
+		this.orbitB = orbitB;
+		this.xOrbB = xOrbB;
+		this.yOrbB = yOrbB;
+	}
+}
+
+class connect_array {
+	constructor(iArc1, iArc2, orbAtoA, orbAtoB, orbBtoA, orbBtoB)
+	{
+		this.iArc1 = iArc1;
+		this.iArc2 = iArc2;
+		this.orbAtoA = orbAtoA;
+		this.orbAtoB = orbAtoB;
+		this.orbBtoA = orbBtoA;
+		this.orbBtoB = orbBtoB;
+	}
+}
+
+class select_box {
+	constructor(iArc, type)
+	{
+		this.iArc = iArc;
+		this.type = type;
+	}
+}
+
+var xPointer = 0;
+var yPointer = 0;
+var dragBox = 0;
+const sel_box = new select_box(-1, -1);
+const sel_box_prior = new select_box(-1, -1);
+var add_arcs_mode = true;
+
+const arc = [];
+const conn = [];
+var bezierArr = [];
+
+const img = new Image();
+
+function bezierCircleApprox(angleA, angleB)
+{
+	var angle, radAngle;
+	
+	// get the angle of the arc
+	if (angleA > angleB)
+	angle = angleA - angleB;
+	else
+	angle = 360 - angleB + angleA;
+	
+	// convert to radians
+	radAngle = angle * (Math.PI / 180);
+	
+	// return handle length
+	return 4 / 3 * Math.tan(radAngle / 4);
+}
+
+function drawScreen()
+{
+	ctx.clearRect(0, 0, c.width, c.height);
+
+	// draw the local image if it exists
+	ctx.drawImage(img, 0, 0);
+
+	var i;
+	for (i=0; i < arc.length; i++)
+	{
+		ctx.strokeStyle = "#770000";
+		ctx.lineWidth = 1;
+		
+		ctx.beginPath(); // draw circle
+		ctx.arc(arc[i].x, arc[i].y, Math.abs(arc[i].radius), 0, 2 * Math.PI);
+		ctx.stroke();
+
+		ctx.beginPath(); // draw radius
+		ctx.moveTo(arc[i].x, arc[i].y);
+		ctx.lineTo(arc[i].x+arc[i].radius, arc[i].y);
+		ctx.stroke();
+		
+		// draw boxes
+		ctx.strokeStyle = "#000000";
+		ctx.strokeRect(arc[i].x+arc[i].radius-5, arc[i].y-5, 10, 10);
+
+		ctx.strokeStyle = "#000000";
+		if (((sel_box.iArc == i) && (sel_box.type == 1)) ||
+			((sel_box_prior.iArc == i) && (sel_box_prior.type == 1)))
+		ctx.strokeStyle = "#FF0000";
+		ctx.strokeRect(arc[i].x-5, arc[i].y-5, 10, 10);
+		
+		ctx.strokeStyle = "#AA7700";
+		if (((sel_box.iArc == i) && (sel_box.type == 2)) ||
+			((sel_box_prior.iArc == i) && (sel_box_prior.type == 2)))
+		ctx.strokeStyle = "#FF0000";
+		arc[i].xOrbA = Math.sin(arc[i].orbitA*Math.PI/180)*Math.abs(arc[i].radius);
+		arc[i].yOrbA = -Math.cos(arc[i].orbitA*Math.PI/180)*Math.abs(arc[i].radius);
+		ctx.strokeRect(arc[i].x+arc[i].xOrbA-5, arc[i].y+arc[i].yOrbA-5, 10, 10);
+
+		ctx.strokeStyle = "#AA7700";
+		if (((sel_box.iArc == i) && (sel_box.type == 3)) ||
+			((sel_box_prior.iArc == i) && (sel_box_prior.type == 3)))
+		ctx.strokeStyle = "#FF0000";
+		arc[i].xOrbB = Math.sin(arc[i].orbitB*Math.PI/180)*Math.abs(arc[i].radius);
+		arc[i].yOrbB = -Math.cos(arc[i].orbitB*Math.PI/180)*Math.abs(arc[i].radius);
+		ctx.strokeRect(arc[i].x+arc[i].xOrbB-5, arc[i].y+arc[i].yOrbB-5, 10, 10);
+	}
+	
+	
+	var j;
+	var iConnect;
+	var xCtrl1, yCtrl1, xCtrl2, yCtrl2;
+	var xOrb1, yOrb1, xOrb2, yOrb2, rad1, rad2;
+	bezierArr = [];
+	
+	for (iConnect=0; iConnect < conn.length; iConnect++)
+	{
+		i = conn[iConnect].iArc1;
+		j = conn[iConnect].iArc2;
+		
+		if (conn[iConnect].orbAtoA || conn[iConnect].orbAtoB)
+		{
+			xOrb1 = arc[i].xOrbA;
+			yOrb1 = arc[i].yOrbA;
+			rad1 = -arc[i].radius;
+		}
+		
+		if (conn[iConnect].orbBtoA || conn[iConnect].orbBtoB)
+		{
+			xOrb1 = arc[i].xOrbB;
+			yOrb1 = arc[i].yOrbB;
+			rad1 = arc[i].radius;
+		}
+		
+		if (conn[iConnect].orbAtoA || conn[iConnect].orbBtoA)
+		{
+			xOrb2 = arc[j].xOrbA;
+			yOrb2 = arc[j].yOrbA;
+			rad2 = -arc[j].radius;
+		}
+		
+		if (conn[iConnect].orbAtoB || conn[iConnect].orbBtoB)
+		{
+			xOrb2 = arc[j].xOrbB;
+			yOrb2 = arc[j].yOrbB;
+			rad2 = arc[j].radius;
+		}
+		
+		var xBgn = arc[i].x + xOrb1;
+		var yBgn = arc[i].y + yOrb1;
+		var xEnd = arc[j].x + xOrb2;
+		var yEnd = arc[j].y + yOrb2;
+
+		
+		var handleToChordRatio;
+		var chordLength;
+		var handleScale1, handleScale2;
+		
+		if (i == j) // if the arc is connect to itself
+		{
+			handleToChordRatio = bezierCircleApprox(arc[i].orbitA, arc[i].orbitB);
+			handleScale1 = handleToChordRatio;
+			handleScale2 = handleToChordRatio;
+		}
+		else
+		{
+			// distance between orbitals
+			chordLength = Math.sqrt(Math.pow(xBgn - xEnd, 2) + Math.pow(yBgn - yEnd, 2));
+			handleScale1 = chordLength * 0.5 / rad1;
+			handleScale2 = -chordLength * 0.5 / rad2;
+		}
+		
+		xCtrl1 = arc[i].x + xOrb1 + yOrb1 * handleScale1;
+		yCtrl1 = arc[i].y + yOrb1 - xOrb1 * handleScale1;
+		xCtrl2 = arc[j].x + xOrb2 - yOrb2 * handleScale2; //  - yOrb2 * handleScale2;
+		yCtrl2 = arc[j].y + yOrb2 + xOrb2 * handleScale2; //  + xOrb2 * handleScale2;
+		
+		// control handles
+		ctx.strokeStyle = "#770000";
+		ctx.lineWidth = 1;
+		
+		ctx.beginPath(); // perpendicular to angle of line to center 1
+		ctx.moveTo(xBgn, yBgn);
+		ctx.lineTo(xCtrl1, yCtrl1);
+		ctx.stroke();
+
+		ctx.beginPath(); // perpendicular to angle of line to center 2
+		ctx.moveTo(xEnd, yEnd);
+		ctx.lineTo(xCtrl2, yCtrl2);
+		ctx.stroke();
+		
+		// draw bezier curve
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = "#000000";
+		ctx.beginPath();
+		ctx.moveTo(xBgn, yBgn);
+		ctx.bezierCurveTo(xCtrl1, yCtrl1, xCtrl2, yCtrl2, xEnd, yEnd);
+		ctx.stroke();
+		
+		bezierArr.push([xBgn, yBgn, xCtrl1, yCtrl1, xCtrl2, yCtrl2, xEnd, yEnd, -1, -1, -1]);
+	}
+}
+
+function trackMouse(event)
+{
+	var i;
+	var ang, angPrior, angDiff;
+	var rect = c.getBoundingClientRect();
+	var x = (event.clientX - rect.left) / (rect.right - rect.left) * c.width;
+	var y = (event.clientY - rect.top) / (rect.bottom - rect.top) * c.height;
+	xPointer = Math.round(x);
+	yPointer = Math.round(y);
+
+	if (dragBox)
+	for (i=0; i < arc.length; i++)
+	{
+		if (sel_box.iArc != i)
+		continue;
+		
+		if (sel_box.type == 0)
+		{
+			arc[i].radius = Math.sqrt(Math.pow(xPointer-arc[i].x, 2) + Math.pow(yPointer-arc[i].y, 2));
+		
+			ang = Math.atan2(yPointer-arc[i].y, xPointer-arc[i].x) * (180 / Math.PI) + 90;
+			angPrior = Math.atan2(yPointerPrior-arc[i].y, xPointerPrior-arc[i].x) * (180 / Math.PI) + 90;
+			angDiff = ang - angPrior;
+			
+			arc[i].orbitA = (arc[i].orbitA + angDiff + 360) % 360; // 0 to 360 degrees
+			arc[i].orbitB = (arc[i].orbitB + angDiff + 360) % 360; // 0 to 360 degrees
+		}
+		
+		if (sel_box.type == 1)
+		{
+			arc[i].x = xPointer;
+			arc[i].y = yPointer;
+		}
+		
+		if (sel_box.type == 2)
+		{
+			ang = Math.atan2(yPointer-arc[i].y, xPointer-arc[i].x) * (180 / Math.PI) + 90;
+			arc[i].orbitA = (ang + 360) % 360; // 0 to 360 degrees
+		}
+		
+		if (sel_box.type == 3)
+		{
+			ang = Math.atan2(yPointer-arc[i].y, xPointer-arc[i].x) * (180 / Math.PI) + 90;
+			arc[i].orbitB = (ang + 360) % 360; // 0 to 360 degrees
+		}
+	}
+	
+	xPointerPrior = xPointer;
+	yPointerPrior = yPointer;
+	drawScreen();
+}
+
+function getDragBox(x, y)
+{
+	if ((xPointer >= x-8) && (xPointer < x+8) && (yPointer >= y-8) && (yPointer < y+8))
+	return true;
+	else
+	return false;
+}
+
+function onCanvasMouseDown()
+{
+	var i;
+	
+	for (i=0; i < arc.length; i++)
+	{
+		if (getDragBox(arc[i].x+arc[i].radius, arc[i].y))
+		{
+			sel_box_prior.iArc = sel_box.iArc;
+			sel_box_prior.type = sel_box.type;
+			sel_box.iArc = i;
+			sel_box.type = 0;
+			dragBox = true;
+			return;
+		}
+		
+		if (getDragBox(arc[i].x, arc[i].y))
+		{
+			sel_box_prior.iArc = i;
+			sel_box_prior.type = 1;
+			sel_box.iArc = i;
+			sel_box.type = 1;
+			dragBox = true;
+			return;
+		}
+		
+		if (getDragBox(arc[i].x+arc[i].xOrbA, arc[i].y+arc[i].yOrbA))
+		{
+			sel_box_prior.iArc = sel_box.iArc;
+			sel_box_prior.type = sel_box.type;
+			
+			if (sel_box.type == 1)
+			sel_box_prior.type = -1;
+			
+			sel_box.iArc = i;
+			sel_box.type = 2;
+			
+			dragBox = true;
+			return;
+		}
+		
+		if (getDragBox(arc[i].x+arc[i].xOrbB, arc[i].y+arc[i].yOrbB))
+		{
+			sel_box_prior.iArc = sel_box.iArc;
+			sel_box_prior.type = sel_box.type;
+			
+			if (sel_box.type == 1)
+			sel_box_prior.type = -1;
+			
+			sel_box.iArc = i;
+			sel_box.type = 3;
+			
+			dragBox = true;
+			return;
+		}
+	}
+	
+	if (add_arcs_mode)
+	{
+		arc.push(new arc_curve(xPointer, yPointer, 1, 180, 0, 1, 0, 0, 0));
+		conn.push(new connect_array(arc.length-1, arc.length-1, false, true, false, false));
+		onCanvasMouseDown();
+	}
+	
+}
+
+function deselectDragBox()
+{
+	if (sel_box.type == 0)
+	{
+		sel_box_prior.iArc = sel_box.iArc;
+		sel_box_prior.type = 1;
+		sel_box.type = 1;
+	}
+	
+	dragBox = false;
+	drawScreen();
+}
+
+function toggleAddMode()
+{
+	const addBtn = document.getElementById('addBtn');
+
+	if (add_arcs_mode == false)
+	{
+		addBtn.style.backgroundColor = '#AA8888';
+		addBtn.textContent = 'Layout';
+		add_arcs_mode = true;
+	}
+	else
+	{
+		addBtn.style.backgroundColor = '#8888AA';
+		addBtn.textContent = 'Modify';
+		add_arcs_mode = false;
+	}
+}
+
+function deleteConnections()
+{
+	var i;
+	const arcObj = 1, orbObjA = 2, orbObjB = 3;
+
+	if (sel_box.type == arcObj)
+	{
+		for (i=conn.length-1; i >= 0; i--)
+		{
+			if (sel_box.iArc == conn[i].iArc1)
+			conn.splice(i, 1);
+			else if (sel_box.iArc == conn[i].iArc2)
+			conn.splice(i, 1);
+		}
+	}
+	
+	if (sel_box_prior.type == arcObj)
+	{
+		for (i=conn.length-1; i >= 0; i--)
+		{
+			if (sel_box_prior.iArc == conn[i].iArc1)
+			conn.splice(i, 1);
+			else if (sel_box_prior.iArc == conn[i].iArc2)
+			conn.splice(i, 1);
+		}
+	}
+	
+	if (sel_box.type == arcObj)
+	{
+		for (i=0; i < conn.length; i++) // shift connections for deleted arc
+		{
+			if (sel_box.iArc < conn[i].iArc1)
+			conn[i].iArc1--;
+			
+			if (sel_box.iArc < conn[i].iArc2)
+			conn[i].iArc2--;
+		}
+		
+		arc.splice(sel_box.iArc, 1); // delete
+		
+		sel_box_prior.iArc = -1; // select none
+		sel_box_prior.type = -1;
+		sel_box.iArc = -1;
+		sel_box.type = -1;
+	}
+	
+	
+	var selected_iArc1, selected_iArc2;
+	var selected_type1, selected_type2;
+	
+	if (sel_box.iArc < sel_box_prior.iArc)
+	{
+		selected_iArc1 = sel_box.iArc;
+		selected_iArc2 = sel_box_prior.iArc;
+		selected_type1 = sel_box.type;
+		selected_type2 = sel_box_prior.type;
+	}
+	else
+	{
+		selected_iArc1 = sel_box_prior.iArc;
+		selected_iArc2 = sel_box.iArc;
+		selected_type1 = sel_box_prior.type;
+		selected_type2 = sel_box.type;
+	}
+	
+	if ((selected_type1 == orbObjA) && (selected_type2 == orbObjA))
+	for (i=conn.length-1; i >= 0; i--)
+	if (conn[i].orbAtoA)
+	if ((selected_iArc1 == conn[i].iArc1) && (selected_iArc2 == conn[i].iArc2))
+	{
+		conn.splice(i, 1);
+		break;
+	}
+	
+	if (((selected_type1 == orbObjA) && (selected_type2 == orbObjB)) ||
+		(selected_iArc1 == selected_iArc2))
+	for (i=conn.length-1; i >= 0; i--)
+	if (conn[i].orbAtoB)
+	if ((selected_iArc1 == conn[i].iArc1) && (selected_iArc2 == conn[i].iArc2))
+	{
+		conn.splice(i, 1);
+		break;
+	}
+	
+	if (((selected_type1 == orbObjB) && (selected_type2 == orbObjA)) ||
+		(selected_iArc1 == selected_iArc2))
+	for (i=conn.length-1; i >= 0; i--)
+	if (conn[i].orbBtoA)
+	if ((selected_iArc1 == conn[i].iArc1) && (selected_iArc2 == conn[i].iArc2))
+	{
+		conn.splice(i, 1);
+		break;
+	}
+	
+	if ((selected_type1 == orbObjB) && (selected_type2 == orbObjB))
+	for (i=conn.length-1; i >= 0; i--)
+	if (conn[i].orbBtoB)
+	if ((selected_iArc1 == conn[i].iArc1) && (selected_iArc2 == conn[i].iArc2))
+	{
+		conn.splice(i, 1);
+		break;
+	}
+	
+	drawScreen();
+}
+
+function connectOrbits()
+{
+	var i;
+	var selected_iArc1, selected_iArc2;
+	var selected_type1, selected_type2;
+	const arcObj = 1, orbObjA = 2, orbObjB = 3;
+	
+	if (sel_box.iArc < sel_box_prior.iArc)
+	{
+		selected_iArc1 = sel_box.iArc;
+		selected_iArc2 = sel_box_prior.iArc;
+		selected_type1 = sel_box.type;
+		selected_type2 = sel_box_prior.type;
+	}
+	else
+	{
+		selected_iArc1 = sel_box_prior.iArc;
+		selected_iArc2 = sel_box.iArc;
+		selected_type1 = sel_box_prior.type;
+		selected_type2 = sel_box.type;
+	}
+	
+	if ((selected_type1 == orbObjA) && (selected_type2 == orbObjA))
+	{
+		for (i=0; i < conn.length; i++) // check connection does not exist
+		if (conn[i].orbAtoA)
+		if (conn[i].iArc1 == selected_iArc1)
+		if (conn[i].iArc2 == selected_iArc2)
+		return;
+		
+		conn.push(new connect_array(selected_iArc1, selected_iArc2, true, false, false, false));
+	}
+	
+	if ((selected_type1 == orbObjA) && (selected_type2 == orbObjB))
+	{
+		for (i=0; i < conn.length; i++) // check connection does not exist
+		if (conn[i].orbAtoB)
+		if (conn[i].iArc1 == selected_iArc1)
+		if (conn[i].iArc2 == selected_iArc2)
+		return;
+		
+		conn.push(new connect_array(selected_iArc1, selected_iArc2, false, true, false, false));
+	}
+	
+	if ((selected_type1 == orbObjB) && (selected_type2 == orbObjA))
+	{
+		if (sel_box.iArc == sel_box_prior.iArc)
+		{
+			for (i=0; i < conn.length; i++) // check connection does not exist
+			if (conn[i].orbAtoB)
+			if (conn[i].iArc1 == selected_iArc1)
+			if (conn[i].iArc2 == selected_iArc2)
+			return;
+		
+			conn.push(new connect_array(selected_iArc1, selected_iArc2, false, true, false, false));
+		}
+		else
+		{
+			for (i=0; i < conn.length; i++) // check connection does not exist
+			if (conn[i].orbBtoA)
+			if (conn[i].iArc1 == selected_iArc1)
+			if (conn[i].iArc2 == selected_iArc2)
+			return;
+		
+			conn.push(new connect_array(selected_iArc1, selected_iArc2, false, false, true, false));
+		}
+	}
+	
+	if ((selected_type1 == orbObjB) && (selected_type2 == orbObjB))
+	{
+		for (i=0; i < conn.length; i++) // check connection does not exist
+		if (conn[i].orbBtoB)
+		if (conn[i].iArc1 == selected_iArc1)
+		if (conn[i].iArc2 == selected_iArc2)
+		return;
+		
+		conn.push(new connect_array(selected_iArc1, selected_iArc2, false, false, false, true));
+	}
+	
+	drawScreen();
+}
+
+const imageLoader = document.getElementById('imageLoader');
+imageLoader.addEventListener('change', openBgImage, false);
+
+function openBgImage(e)
+{
+	const file = e.target.files[0]; // Get the selected file
+	if (!file) return;
+
+	img.onload = function()
+	{
+		c.width = img.width;
+		c.height = img.height;
+
+		// clean up memory by revoking the temporary object URL
+		URL.revokeObjectURL(img.src);
+	};
+
+	// convert the local file into a secure temporary web URL
+	img.src = URL.createObjectURL(file);
+
+	drawScreen();
+}
+
+function getContentStringSVG(circuits)
+{
+	var i, j;
+	
+	var dataString = '<svg xmlns="http://www.w3.org/2000/svg" width="'+c.width+'" height="'+c.height+'">\n';
+
+	for (i=0; i < circuits.length; i++)
+	{
+		beziers = circuits[i];
+		
+		dataString += '<path d="M '+beziers[0][0]+' '+beziers[0][1]+' \n'
+		
+		for (j=0; j < beziers.length; j++)
+		dataString += 'C '+beziers[j][2]+' '+beziers[j][3]+', '+beziers[j][4]+' '+beziers[j][5]+', '+beziers[j][6]+' '+beziers[j][7]+'\n' 
+		
+		dataString += '" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round" />\n'
+	}
+	
+	dataString += '</svg>';
+
+	return dataString;
+}
+
+function downloadSVG()
+{
+	var i;
+	const fileName = "bezier_data.svg";
+
+	var circuits = beziersToCircuits(bezierArr, 0.001);
+	var svgContentString = getContentStringSVG(circuits);
+	
+	// create a Blob with the SVG data
+	const blob = new Blob([svgContentString], { type: "image/svg+xml;charset=utf-8" });
+
+	// create a temporary object URL pointing to the Blob
+	const url = URL.createObjectURL(blob);
+
+	// create a temporary anchor element to trigger the download
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = fileName;
+
+	// append to DOM
+	document.body.appendChild(link);
+	link.click();
+	
+	// clean up
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+}
+
+drawScreen();
+
+</script>
+</body>
+</html>
+
