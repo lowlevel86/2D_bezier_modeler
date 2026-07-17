@@ -69,6 +69,11 @@ function beziersToCircuits(bezierArr, epsilon)
 			if (Math.abs(bezierArr[i][1] - bezierArr[j][7]) < epsilon)
 			if (i != j)
 			bezierArr[i][10] = j;
+			
+			if (Math.abs(bezierArr[i][6] - bezierArr[j][0]) < epsilon)
+			if (Math.abs(bezierArr[i][7] - bezierArr[j][1]) < epsilon)
+			if (i != j)
+			bezierArr[i][11] = j;
 		}
 	}
 	
@@ -76,7 +81,8 @@ function beziersToCircuits(bezierArr, epsilon)
 	for (i=0; i < bezierArr.length; i++)
 	if ((bezierArr[i][8] == -1) && // skip non-connecting circuits
 		(bezierArr[i][9] == -1) &&
-		(bezierArr[i][10] == -1))
+		(bezierArr[i][10] == -1) &&
+		(bezierArr[i][11] == -1))
 	{
 		circ = [];
 		circ.push(bezierArr[i]);
@@ -91,7 +97,8 @@ function beziersToCircuits(bezierArr, epsilon)
 		
 		if ((bezierArr[idx1][8] == -1) && // skip non-connecting circuits
 			(bezierArr[idx1][9] == -1) &&
-			(bezierArr[idx1][10] == -1))
+			(bezierArr[idx1][10] == -1) &&
+			(bezierArr[idx1][11] == -1))
 		continue;
 		
 		circ = [];
@@ -105,15 +112,19 @@ function beziersToCircuits(bezierArr, epsilon)
 			idx2 = bezierArr[idx1][9];
 			else if ((bezierArr[idx1][10] != idx0) && (bezierArr[idx1][10] != -1))
 			idx2 = bezierArr[idx1][10];
+			else if ((bezierArr[idx1][11] != idx0) && (bezierArr[idx1][11] != -1))
+			idx2 = bezierArr[idx1][11];
 			
 			// if back to beginning end-point
 			if ((bezierArr[idx2][8] == -1) &&
 				(bezierArr[idx2][9] == -1) &&
-				(bezierArr[idx2][10] == -1))
+				(bezierArr[idx2][10] == -1) &&
+				(bezierArr[idx2][11] == -1))
 			{
 				bezierArr[idx1][8] = -1;
 				bezierArr[idx1][9] = -1;
 				bezierArr[idx1][10] = -1;
+				bezierArr[idx1][11] = -1;
 				circ.push(bezierArr[idx1]);
 				break;
 			}
@@ -123,6 +134,7 @@ function beziersToCircuits(bezierArr, epsilon)
 			bezierArr[idx1][8] = -1;
 			bezierArr[idx1][9] = -1;
 			bezierArr[idx1][10] = -1;
+			bezierArr[idx1][11] = -1;
 			circ.push(bezierArr[idx1]);
 			idx0 = idx1;
 			idx1 = idx2;
@@ -130,7 +142,8 @@ function beziersToCircuits(bezierArr, epsilon)
 			// if end of connections
 			if ((bezierArr[idx1][8] == -1) &&
 				(bezierArr[idx1][9] == -1) &&
-				(bezierArr[idx1][10] == -1))
+				(bezierArr[idx1][10] == -1) &&
+				(bezierArr[idx1][11] == -1))
 			break;
 		}
 		
