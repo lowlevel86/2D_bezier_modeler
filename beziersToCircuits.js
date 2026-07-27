@@ -79,13 +79,42 @@ function beziersToCircuits(bezierArr, epsilon)
 	
 	// find single disconnected beziers
 	for (i=0; i < bezierArr.length; i++)
-	if ((bezierArr[i][8] == -1) && // skip non-connecting circuits
+	if ((bezierArr[i][8] == -1) &&
 		(bezierArr[i][9] == -1) &&
 		(bezierArr[i][10] == -1) &&
 		(bezierArr[i][11] == -1))
 	{
 		circ = [];
 		circ.push(bezierArr[i]);
+		circuits.push(circ);
+	}
+	
+	// find beziers that are connected to 2 or more others
+	const connCntArr = new Array(bezierArr.length).fill(0); 
+	for (i=0; i < bezierArr.length; i++)
+	{
+		if (bezierArr[i][8] != -1)
+		connCntArr[bezierArr[i][8]]++;
+		
+		if (bezierArr[i][9] != -1)
+		connCntArr[bezierArr[i][9]]++;
+		
+		if (bezierArr[i][10] != -1)
+		connCntArr[bezierArr[i][10]]++;
+		
+		if (bezierArr[i][11] != -1)
+		connCntArr[bezierArr[i][11]]++;
+	}
+	
+	for (i=0; i < bezierArr.length; i++)
+	if (connCntArr[i] > 2)
+	{
+		circ = [];
+		circ.push(bezierArr[i]);
+		bezierArr[i][8] = -1;
+		bezierArr[i][9] = -1;
+		bezierArr[i][10] = -1;
+		bezierArr[i][11] = -1;
 		circuits.push(circ);
 	}
 	
